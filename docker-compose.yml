@@ -1,0 +1,139 @@
+services:
+  database:
+    image: postgres:16-alpine
+    container_name: campus-database
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - campus_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  student-portal:
+    build:
+      context: ./services/student-portal
+    container_name: campus-student-portal
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 3000
+      SERVICE_NAME: Student Portal
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+      ATTENDANCE_API_URL: http://attendance-system:3001
+      NOTIFICATION_API_URL: http://notification-service:3002
+    depends_on:
+      database:
+        condition: service_healthy
+      attendance-system:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    ports:
+      - "${STUDENT_PORTAL_PORT}:3000"
+    networks:
+      - campus_network
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  attendance-system:
+    build:
+      context: ./services/attendance-system
+    container_name: campus-attendance-system
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 3001
+      SERVICE_NAME: Attendance System
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - "${ATTENDANCE_PORT}:3001"
+    networks:
+      - campus_network
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+    container_name: campus-notification-service
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 3002
+      SERVICE_NAME: Notification Service
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - "${NOTIFICATION_PORT}:3002"
+    networks:
+      - campus_network
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  admin-dashboard:
+    build:
+      context: ./services/admin-dashboard
+    container_name: campus-admin-dashboard
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 3003
+      SERVICE_NAME: Admin Dashboard
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+      STUDENT_API_URL: http://student-portal:3000
+      ATTENDANCE_API_URL: http://attendance-system:3001
+      NOTIFICATION_API_URL: http://notification-service:3002
+    depends_on:
+      database:
+        condition: service_healthy
+      student-portal:
+        condition: service_started
+      attendance-system:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    ports:
+      - "${ADMIN_DASHBOARD_PORT}:3003"
+    networks:
+      - campus_network
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+networks:
+  campus_network:
+    driver: bridge
